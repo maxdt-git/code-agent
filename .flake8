@@ -1,0 +1,4 @@
+[flake8]
+# models.py is a verbatim copy of moulinette/models_public.py
+per-file-ignores =
+    src/agent_smith/models.py: E501
