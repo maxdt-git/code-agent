@@ -51,6 +51,8 @@ def translate_status(
         return KeyRejectedError(text)
     if status == 404:
         return ModelUnavailableError(text)
+    if status == 408:
+        return TransientError(text)
     if status == 429:
         return RateLimitedError(text, retry_after=retry_after)
     if status >= 500:

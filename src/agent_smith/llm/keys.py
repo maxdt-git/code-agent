@@ -1,7 +1,3 @@
-"""
-API keys loading (PREFIX, PREFIX_1, PREFIX_2...) and rotation.
-A key value is never printed: logs use its env var name.
-"""
 from collections.abc import Mapping
 import os
 
