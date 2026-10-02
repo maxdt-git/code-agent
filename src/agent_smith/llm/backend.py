@@ -119,7 +119,8 @@ class OpenAICompatBackend:
                 model=model,
                 messages=cast(Any, messages),
                 stop=stop if stop else omit,
-                max_tokens=max_tokens if max_tokens is not None else omit
+                max_tokens=max_tokens if max_tokens is not None else omit,
+                timeout=timeout
             )
         except openai.APIConnectionError as e:
             raise TransientError(f"connection error: {e}") from e
