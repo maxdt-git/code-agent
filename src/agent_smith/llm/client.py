@@ -58,16 +58,16 @@ class LLMClient:
 
         self._target_index: int = 0
 
-    def backoff(self, waits: int) -> float:
+    def _backoff(self, waits: int) -> float:
         """
-        returns the min between config.back_off_max_second and the time
+        Returns the min between config.back_off_max_second and the time
         it should take depending on the rate limite and transient error
         """
         return float(min(
             self._config.backoff_base_seconds * 2 ** waits,
             self._config.backoff_max_seconds))
 
-    def find_deadline(self, deadline: float | None) -> float | None:
+    def _time_left(self, deadline: float | None) -> float | None:
         """
         Use to know how much time we have before the deadline
         """
@@ -75,19 +75,21 @@ class LLMClient:
             return None
         return deadline - self._clock()
 
-    def wait(
+    def _wait(
             self,
             seconds: float,
-            deadline: float,
+            deadline: float | None,
             last_error: LLMError | None
     ) -> None:
-        ...
-# Avant chaque sleep (transitoire et 429) : si l'attente prévue est supérieure
-# ou égale au temps restant, ne dors pas et lève LLMUnavailableError tout de
-# suite. Dormir pour se réveiller après l'heure limite ne sert à rien.
-# Comme cette vérification se fait à deux endroits, mets-la dans une méthode
-# privée (par exemple _wait(seconds, deadline, last_error)) qui vérifie puis
-# dort. Tes deux branches except l'appelleront.
+        """
+        Sleep seconds or give up if pass the deadline
+        """
+        left = self._time_left(deadline)
+        if left is not None and seconds >= left:
+            raise LLMUnavailableError(
+                f"deadline too close to wait {seconds:.1f}s: {last_error}") \
+                    from last_error
+        self._sleep(seconds)
 
     def complete(
             self,
@@ -108,8 +110,8 @@ class LLMClient:
             if self._target_index >= len(self._targets):
                 raise LLMUnavailableError(
                     f"no usable target left: {last_error}") from last_error
-            available_time = self.find_deadline(deadline)
-            if available_time is None or available_time <= 0:
+            available_time = self._time_left(deadline)
+            if available_time is not None and available_time <= 0:
                 raise LLMUnavailableError(
                     f"deadline reached: {last_error}") from last_error
             target = self._targets[self._target_index]
@@ -130,15 +132,18 @@ class LLMClient:
             start = self._clock()
 
             try:
-                chat_result = self._backend.chat(
+                timeout = self._config.request_timeout_seconds
+                if available_time is not None:
+                    timeout = min(
+                        available_time, self._config.request_timeout_seconds)
+                chat_result: ChatResult = self._backend.chat(
                     base_url=base_url,
                     api_key=key[1],
                     model=target.model,
                     messages=messages,
                     stop=stop,
                     max_tokens=max_tokens,
-                    timeout=min(
-                        available_time, self._config.request_timeout_seconds))
+                    timeout=timeout)
                 request_time_ms = (self._clock() - start) * 1000
                 return Completion(
                     chat_result,
@@ -151,7 +156,7 @@ class LLMClient:
             except TransientError as e:
                 last_error = e
                 if requests < self._config.max_attempts:
-                    self._sleep(self.backoff(waits))
+                    self._wait(self._backoff(waits), deadline, last_error)
                     waits += 1
 
             except KeyRejectedError as e:
@@ -166,10 +171,10 @@ class LLMClient:
                     limited_in_row = 0
                     if requests < self._config.max_attempts:
                         wait_sec = e.retry_after if e.retry_after is not None \
-                            else self.backoff(waits)
+                            else self._backoff(waits)
                         wait_sec = min(
                             wait_sec, self._config.backoff_max_seconds)
-                        self._sleep(wait_sec)
+                        self._wait(wait_sec, deadline, last_error)
                         waits += 1
 
             except ModelUnavailableError as e:

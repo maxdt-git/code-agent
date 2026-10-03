@@ -365,3 +365,85 @@ def test_model_unavailable_without_fallback_gives_up() -> None:
     with pytest.raises(LLMUnavailableError):
         client.complete(MESSAGES)
     assert len(backend.calls) == 1
+
+
+# --- deadline
+
+class FakeTime:
+    """
+    Fake clock starting at 0: sleep records the wait and moves the
+    clock forward, so no test really waits
+    """
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def make_timed_client(
+        script: list[ChatResult | Exception]
+) -> tuple[LLMClient, FakeBackend, FakeTime]:
+    """
+    Client wired to a FakeBackend and a FakeTime
+    """
+    backend = FakeBackend(script)
+    fake_time = FakeTime()
+    client = LLMClient(
+        make_config(), GROQ_URL, MODEL, backend=backend,
+        environ={"GROQ_API_KEY_1": "key-one"},
+        sleep=fake_time.sleep, clock=fake_time.clock)
+    return client, backend, fake_time
+
+
+def test_deadline_already_passed_does_not_call_backend() -> None:
+    client, backend, fake_time = make_timed_client([ok()])
+    fake_time.now = 100.0
+    with pytest.raises(LLMUnavailableError):
+        client.complete(MESSAGES, deadline=50.0)
+    assert backend.calls == []
+
+
+def test_gives_up_instead_of_waiting_past_deadline() -> None:
+    client, backend, fake_time = make_timed_client(
+        [TransientError("503"), ok()])
+    with pytest.raises(LLMUnavailableError) as error:
+        client.complete(MESSAGES, deadline=0.5)
+    assert len(backend.calls) == 1
+    assert fake_time.sleeps == []
+    assert isinstance(error.value.__cause__, TransientError)
+
+
+def test_rate_limit_wait_past_deadline_gives_up() -> None:
+    client, backend, fake_time = make_timed_client(
+        [RateLimitedError("429", retry_after=5.0), ok()])
+    with pytest.raises(LLMUnavailableError) as error:
+        client.complete(MESSAGES, deadline=3.0)
+    assert len(backend.calls) == 1
+    assert fake_time.sleeps == []
+    assert isinstance(error.value.__cause__, RateLimitedError)
+
+
+def test_waits_when_the_wait_fits_before_deadline() -> None:
+    client, _, fake_time = make_timed_client([TransientError("503"), ok()])
+    completion = client.complete(MESSAGES, deadline=10.0)
+    assert fake_time.sleeps == [1.0]
+    assert completion.retries == 1
+
+
+def test_timeout_is_reduced_to_the_time_left() -> None:
+    client, backend, _ = make_timed_client([TransientError("503"), ok()])
+    client.complete(MESSAGES, deadline=10.0)
+    assert backend.calls[0]["timeout"] == 10.0
+    assert backend.calls[1]["timeout"] == 9.0
+
+
+def test_timeout_keeps_config_value_when_deadline_is_far() -> None:
+    client, backend, _ = make_timed_client([ok()])
+    client.complete(MESSAGES, deadline=500.0)
+    assert backend.calls[0]["timeout"] == 60.0
