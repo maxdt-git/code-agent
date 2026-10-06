@@ -8,6 +8,7 @@ from agent_smith.sandbox.guards import (
     make_safe_import, make_safe_builtins, make_safe_open,
     check_tree)
 import ast
+from collections.abc import Callable
 
 
 @dataclass
@@ -19,6 +20,7 @@ class ExecutionResult:
     output: str
     error: str | None
     final_answer: str | None
+    timed_out: bool = False
 
 
 class FinalAnswer(BaseException):
@@ -30,9 +32,26 @@ class FinalAnswer(BaseException):
         self.answer = answer
 
 
+class OutputStream(io.StringIO):
+    """
+    StringIO reports all written text to a callback
+    """
+    def __init__(
+            self,
+            on_output: Callable[[str], None] | None = None
+    ) -> None:
+        super().__init__()
+        self._on_output = on_output
+
+    def write(self, text: str) -> int:
+        if self._on_output is not None and text:
+            self._on_output(text)
+        return super().write(text)
+
+
 def final_answer(answer: object) -> None:
     """
-    Stop executiuon and give the best answer back to the agent
+    Stop execution and give the best answer back to the agent
     """
     raise FinalAnswer(str(answer))
 
@@ -42,18 +61,23 @@ class Executor:
     Class to execute the code, name_space is a dict of the
     precedent variable used
     """
-    def __init__(self, config: SandboxConfig) -> None:
+    def __init__(
+            self,
+            config: SandboxConfig,
+            on_output: Callable[[str], None] | None = None
+    ) -> None:
         self._name_space: dict[str, Any] = {}
         safe_import = make_safe_import(config.authorized_imports)
         safe_open = make_safe_open(config.allowed_directories)
         self._builtins = make_safe_builtins(
             safe_import, safe_open)
+        self._on_output = on_output
 
     def execute(self, code: str) -> ExecutionResult:
         """
         Execute the code and returns an Execution result
         """
-        test_file = io.StringIO()
+        test_file = OutputStream(self._on_output)
         error: str | None = None
         answer: str | None = None
 
@@ -79,20 +103,20 @@ class Executor:
         return ExecutionResult(text, error, answer)
 
 
-if __name__ == "__main__":
-    ex = Executor(SandboxConfig(authorized_imports=[
-        "math", "collections", "collections.*"]))
-    # print(ex.execute("print('avant')\nfinal_answer(
-# 'done')\nprint('apres')"))
-    # print(ex.execute("print('ok')\nprint(1 / 0)"))
-    print(ex.execute("import os"))
-    print(ex.execute("__import__('os')"))
-    print(ex.execute("open('/etc/passwd')"))
-    print(ex.execute("eval('1+1')"))
-    print(ex.execute("import math\nprint(math.pi)"))
-    print(ex.execute("class A: pass\nprint(A)"))
-    print("=============")
-    print(ex.execute("print(getattr((), '__class__'))"))
-    print(ex.execute("print(getattr('abc', 'upper')())"))
-    print(ex.execute("print(getattr('abc', 'nope', 42))"))
-    print(ex.execute("print(hasattr('abc', 'upper'))"))
+# if __name__ == "__main__":
+#     ex = Executor(SandboxConfig(authorized_imports=[
+#         "math", "collections", "collections.*"]))
+#     # print(ex.execute("print('avant')\nfinal_answer(
+# # 'done')\nprint('apres')"))
+#     # print(ex.execute("print('ok')\nprint(1 / 0)"))
+#     print(ex.execute("import os"))
+#     print(ex.execute("__import__('os')"))
+#     print(ex.execute("open('/etc/passwd')"))
+#     print(ex.execute("eval('1+1')"))
+#     print(ex.execute("import math\nprint(math.pi)"))
+#     print(ex.execute("class A: pass\nprint(A)"))
+#     print("=============")
+#     print(ex.execute("print(getattr((), '__class__'))"))
+#     print(ex.execute("print(getattr('abc', 'upper')())"))
+#     print(ex.execute("print(getattr('abc', 'nope', 42))"))
+#     print(ex.execute("print(hasattr('abc', 'upper'))"))

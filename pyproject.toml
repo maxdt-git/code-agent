@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-
+sandbox = "agent_smith.sandbox.cli:main"
 
 [build-system]
 requires = ["hatchling"]
