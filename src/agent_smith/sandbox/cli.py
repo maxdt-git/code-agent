@@ -22,12 +22,12 @@ def parse_args() -> argparse.Namespace:
         "config", nargs="?", default=None,
         help="path to a sandbox json config file"
     )
-    # parser.add_argument(
-    #     "--mcp-stdio", default=None,
-    # )
-    # parser.add_argument(
-    #     "--mcp-server", default=None,
-    # )
+    parser.add_argument(
+        "--mcp-stdio", default=None,
+    )
+    parser.add_argument(
+        "--mcp-server", default=None,
+    )
 
     return parser.parse_args()
 
@@ -53,6 +53,31 @@ def show(result: ExecutionResult) -> None:
         print(f"[final answer] >>> {result.final_answer}")
 
 
+def read_entry() -> str | None:
+    """
+    Read one entry, a single line or a block
+    """
+    try:
+        line = input(">>> ")
+    except EOFError:
+        return None
+    if not line.rstrip().endswith(":"):
+        return line
+
+    lines = [line]
+    while True:
+        try:
+            more = input("... ")
+        except EOFError:
+            break
+        if not more.strip():
+            break
+
+        lines.append(more)
+
+    return "\n".join(lines)
+
+
 def main() -> None:
     """
     Interactive sandbox, read code, run it and print the result
@@ -67,16 +92,16 @@ def main() -> None:
     sandbox = Sandbox(config)
     try:
         while True:
-            try:
-                line = input(">>> ")
-            except EOFError:
+            entry = read_entry()
+            if entry is None:
                 print()
                 break
-            if line.strip() == "exit":
+            if entry.strip() == "exit":
                 break
-            if not line.strip():
+            if not entry.strip():
                 continue
-            show(sandbox.execute(line))
+            show(sandbox.execute(entry))
+
     except KeyboardInterrupt:
         print()
     finally:
