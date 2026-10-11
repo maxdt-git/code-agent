@@ -44,16 +44,24 @@ class Sandbox:
         Send the code to the child and wait for result
         """
         limit = self._config.max_execution_time_seconds
+        # monotonic -> a clock that never goes back
         deadline = time.monotonic() + limit
+        # pieces of output received while the code runs
+        # only used if the code never sends its final result
         chunks: list[str] = []
         self._conn.send(code)
 
         while True:
+            # time left before the timeout
             remaining = deadline - time.monotonic()
             # poll -> did a response arrived??
+            # waits at most "remaining" seconds, False if nothing came
+            # -> time is over, leave the loop and go to the timeout part
             if remaining <= 0 or not self._conn.poll(remaining):
                 break
 
+            # every message is a pair (kind, payload)
+            # EOFError / OSError -> the pipe is closed: the child is dead
             try:
                 kind, payload = self._conn.recv()
             except (EOFError, OSError):
@@ -61,7 +69,7 @@ class Sandbox:
                 return ExecutionResult(
                     output="".join(chunks),
                     error=(
-                        f"the sandbox process died, probably because it"
+                        f"The sandbox process died, probably because it"
                         f"exceed the memory limit {self._config.max_memory_mb}"
                         ".\nThe sandbox was restarted: all variables, "
                         "functions and import from previous steps are lost"
@@ -69,12 +77,17 @@ class Sandbox:
                     final_answer=None,
                     timed_out=True
                 )
-
+            if kind == "raise":
+                raise payload
+            # "result" -> the code is finished, payload is the full result
             if kind == "result":
                 result: ExecutionResult = payload
                 return result
+            # "output" -> a piece of printed text, keep it and wait again
             chunks.append(payload)
 
+        # only reached on timeout: the child is still running the code
+        # the only way to stop it is to kill it and start a new one
         self.restart()
         return ExecutionResult(
                 output="".join(chunks),

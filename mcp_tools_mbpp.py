@@ -19,7 +19,7 @@ def truncate(text: str) -> str:
         return text
     return (
         f"[output truncated: showing last {MAX_OUTPUT_CHARS} of "
-        f"{len(text)} characters\n" + text[-MAX_OUTPUT_CHARS:]
+        f"{len(text)} characters\n]" + text[-MAX_OUTPUT_CHARS:]
     )
 
 
@@ -33,7 +33,8 @@ def run_tests(code: str, test_list: list[str]) -> str:
     """
     script = code + "\n" + "\n".join(test_list)
 
-    # return args, return code
+    # return args
+    # return code
     # None if not captured -> stdout, stderr
     # sys.executable -> command run like its python code -c
     # capture to get it under text if True instead of bytes
