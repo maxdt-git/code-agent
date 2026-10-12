@@ -3,14 +3,24 @@ from agent_smith.models import SandboxConfig
 from agent_smith.sandbox.worker import worker_main
 from agent_smith.sandbox.executor import ExecutionResult
 import time
+from typing import Any
+from agent_smith.sandbox.mcp_bridge import McpBridge
 
 
 class Sandbox:
     """
     Run code in a child process
     """
-    def __init__(self, config: SandboxConfig) -> None:
+    def __init__(
+            self,
+            config: SandboxConfig,
+            bridge: McpBridge | None = None
+    ) -> None:
         self._config = config
+        self._bridge = bridge
+        self._tools: dict[str, Any] = {}
+        if bridge is not None:
+            self._tools = {tool.name: tool for tool in bridge.list_tools()}
         self._start()
 
     def _start(self) -> None:
@@ -29,7 +39,7 @@ class Sandbox:
         # daemon=True -> if process stop, kill child
         self._process = ctx.Process(
             target=worker_main,
-            args=(child_conn, self._config),
+            args=(child_conn, self._config, list(self._tools)),
             daemon=True
         )
         # .start() -> start child
@@ -65,18 +75,24 @@ class Sandbox:
             try:
                 kind, payload = self._conn.recv()
             except (EOFError, OSError):
-                self.restart()
+                self._restart()
                 return ExecutionResult(
                     output="".join(chunks),
                     error=(
-                        f"The sandbox process died, probably because it"
+                        f"The sandbox process died, probably because it "
                         f"exceed the memory limit {self._config.max_memory_mb}"
                         ".\nThe sandbox was restarted: all variables, "
                         "functions and import from previous steps are lost"
                     ),
                     final_answer=None,
-                    timed_out=True
                 )
+            # "call" -> the code call an mcp tool
+            if kind == "call":
+                started = time.monotonic()
+                self._conn.send(self._call_tool(*payload))
+                # tool time doesnt count in sandbox timeout
+                deadline += time.monotonic() - started
+                continue
             if kind == "raise":
                 raise payload
             # "result" -> the code is finished, payload is the full result
@@ -88,11 +104,11 @@ class Sandbox:
 
         # only reached on timeout: the child is still running the code
         # the only way to stop it is to kill it and start a new one
-        self.restart()
+        self._restart()
         return ExecutionResult(
                 output="".join(chunks),
                 error=(
-                    f"Execution timed out after {limit} seconds and"
+                    f"Execution timed out after {limit} seconds and "
                     "was killed\nThe sandbox was restarted: all variables,"
                     " functions and import from previous steps are lost"
                 ),
@@ -113,7 +129,7 @@ class Sandbox:
             self._process.kill()
             self._process.join()
 
-    def restart(self) -> None:
+    def _restart(self) -> None:
         """
         Kill child and start new one
         """
@@ -126,6 +142,33 @@ class Sandbox:
         self._conn.close()
         # new child new pipe
         self._start()
+
+    def _call_tool(
+            self,
+            name: str,
+            args: tuple[Any, ...],
+            kwargs: dict[str, Any]
+    ) -> tuple[bool, str]:
+        """
+        Call an mcp tool for the child, never raising
+        """
+        try:
+            assert self._bridge is not None
+            schema = self._tools[name].input_schema
+            # parameter names in the order declared by the tool
+            names = list(schema.get("properties", {}))
+            # if there is to much args
+            if len(args) > len(names):
+                raise TypeError(
+                    f"{name}() take at most {len(names)} arguments, "
+                    f"got {len(args)}"
+                )
+            # positionnal arguments -> named arguments
+            arguments = dict(zip(names, args))
+            arguments.update(kwargs)
+            return (True, self._bridge.call_tool(name, arguments))
+        except Exception as e:
+            return (False, f"tool {name} failed: {e}")
 
 
 # if __name__ == "__main__":
@@ -150,3 +193,17 @@ class Sandbox:
 #                                max_execution_time_seconds=10,
 #                                max_memory_mb=100))
 #     print(sb.execute("import socket\ns = socket.socket()"))
+    # import shlex
+    # from mcp import StdioServerParameters
+    # parts = shlex.split("python mcp_tools_mbpp.py")
+    # bridge = McpBridge(
+    #     StdioServerParameters(command=parts[0], args=parts[1:]))
+    # sb = Sandbox(SandboxConfig(authorized_imports=["json"]), bridge)
+    # print(sb.execute(
+    #     "code = 'def add(a, b):\\n    return a + b'\n"
+    #     "print(run_tests(code, ['assert add(1, 2) == 3']))"))
+    # print(sb.execute(
+    #     "print(run_tests(code=code, test_list=['assert add(1, 2) == 4']))"))
+    # print(sb.execute("print(run_tests(code))"))
+    # sb.close()
+    # bridge.close()

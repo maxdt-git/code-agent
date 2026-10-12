@@ -1,0 +1,138 @@
+import asyncio
+import threading
+from mcp import Client, StdioServerParameters
+from typing import Any
+
+
+# mcp Client
+# -> open mcp connect (async with Client(...))
+# -> list tools and call tools
+# StdioServerParameters -> command - program to laucnh
+# and args (mcp_tools_mbpp.py)
+# pass to Client -> describe commands who launch the server
+
+# Event() -> create a flag
+# .wait() -> wait for the flag to be raise
+# .set() -> raise the flag
+
+
+class McpBridge:
+    """
+    Synchronous access to an MCP server, from a background event loop
+    """
+    def __init__(self, target: StdioServerParameters | str) -> None:
+        self._target = target
+        # create the event loop
+        self._loop = asyncio.new_event_loop()
+        # one wait with wait and other calls set
+        self._ready = threading.Event()
+        self._error: BaseException | None = None
+        self._client: Client | None = None
+        # second thread of the same process -> self._run
+        # daemon=True -> stop when program ends
+        self._thread = threading.Thread(
+            target=self._run, daemon=True
+        )
+        self._thread.start()
+        # block until not raise
+        # when mcp bridge give back hand, either connec ready or error
+        self._ready.wait()
+        if self._error is not None:
+            raise RuntimeError(
+                f"cannot connect to mcp server: {self._error}"
+            )
+
+    def _run(self) -> None:
+        """
+        Thread body -> run the event loop until the connection is closed
+        """
+        asyncio.set_event_loop(self._loop)
+        # run the loop until serve is done
+        self._loop.run_until_complete(self._serve())
+
+    async def _serve(self) -> None:
+        """
+        Keep the mcp connection open until close is called
+        """
+        self._stop = asyncio.Event()
+        try:
+            # open the connection
+            # laucnh the server as a subprocess
+            async with Client(self._target) as client:
+                self._client = client
+                # when the connec is ready, raise the flag
+                # who deblocks constructor
+                self._ready.set()
+                # put _serve in pause
+                # open until close
+                await self._stop.wait()
+        # if connec failed
+        # get the error and also raise flag or it wait for ever
+        except BaseException as e:
+            self._error = e
+            self._ready.set()
+
+    def _call(self, corou: Any) -> Any:
+        """
+        Run a coroutine on the backround loop and wait for its result
+        """
+        #
+        future = asyncio.run_coroutine_threadsafe(corou, self._loop)
+        # a ticket who represents the coming answer
+        return future.result()
+
+    def list_tools(self) -> list[Any]:
+        """
+        Tools exposed by the server (name, description, input_schema)
+        """
+        # for mypy because could be Client or None
+        assert self._client is not None
+        # create the routine then execute it with _call
+        # response is an object in tools
+        result = self._call(self._client.list_tools())
+        return list(result.tools)
+
+    def call_tool(
+            self,
+            name: str,
+            arguments: dict[str, Any]
+    ) -> str:
+        """
+        Call one tool and return its text output
+        """
+        # mcp protocol gives all arguments by name in a dict
+        assert self._client is not None
+        result = self._call(self._client.call_tool(name, arguments))
+        return "\n".join(
+            item.text for item in result.content if hasattr(item, "text")
+        )
+
+    def close(self) -> None:
+        """
+        Close the connection and stop the background thread
+        """
+        # ask the loop to call stop in his fil
+        # when stop is raise, serve stop the pause and leave bloc async with
+        # -> it close the conn and the serv all the fil is done
+        self._loop.call_soon_threadsafe(self._stop.set)
+        # wait 5sec the fil is really done
+        self._thread.join(timeout=5)
+
+
+# if __name__ == "__main__":
+#     import shlex
+#     parts = shlex.split("python mcp_tools_mbpp.py")
+#     bridge = McpBridge(
+#         StdioServerParameters(command=parts[0], args=parts[1:]))
+#     print("connected:", bridge._client is not None)
+#     for tool in bridge.list_tools():
+#         print(tool.name)
+#         print(tool.input_schema)
+#     print("========", bridge.call_tool("run_tests", {
+#         "code": "def add(a, b):\n    return a + b",
+#         "test_list": ["assert add(1, 2) == 3"]}))
+#     print("========", bridge.call_tool("run_tests", {
+#         "code": "def add(a, b):\n    return a - b",
+#         "test_list": ["assert add(1, 2) == 3"]}))
+#     bridge.close()
+#     print("thread alive:", bridge._thread.is_alive())

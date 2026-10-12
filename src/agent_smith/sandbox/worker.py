@@ -6,11 +6,13 @@ import resource
 import socket
 from typing import Any
 import signal
+from collections.abc import Callable
 
 
 def worker_main(
         conn: Connection,
         config: SandboxConfig,
+        tool_names: list[str]
 ) -> None:
     """
     Child process loop, receive code and send back result
@@ -26,9 +28,24 @@ def worker_main(
     def send_output(text: str) -> None:
         conn.send(("output", text))
 
+    # build the function the code will call for one mcp tool
+    # does not run tool, ask parent and wait
+    def make_tool(name: str) -> Callable[..., Any]:
+        def tool(*args: Any, **kwargs: Any) -> Any:
+            conn.send(("call", (name, args, kwargs)))
+            # wait for the parent response tuple (done, value)
+            ok, value = conn.recv()
+            if not ok:
+                raise RuntimeError(value)
+            return value
+        return tool
+
+    # build the dict
+    tools = {name: make_tool(name) for name in tool_names}
+
     # one executor for the whole life of the child
     # -> variables stay between two executions
-    execute = Executor(config, on_output=send_output)
+    execute = Executor(config, on_output=send_output, tools=tools)
     # limits are set after our own imports
     # so they only apply to the code we run
     limit_memory(config.max_memory_mb)

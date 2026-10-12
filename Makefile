@@ -1,11 +1,11 @@
-# GOINFRE  := /goinfre/$(USER)/agent_smith
-# UV_BASE  := UV_PYTHON_INSTALL_DIR=$(GOINFRE)/uv/python
-# UV_ENV   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv
-# UV_MOU   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv-moulinette UV_PYTHON=3.12
-GOINFRE  := .venv moulinette/.venv
-UV_BASE  :=
-UV_ENV   :=
-UV_MOU   := UV_PYTHON=3.12
+GOINFRE  := /goinfre/$(USER)/agent_smith
+UV_BASE  := UV_PYTHON_INSTALL_DIR=$(GOINFRE)/uv/python
+UV_ENV   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv
+UV_MOU   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv-moulinette UV_PYTHON=3.12
+# GOINFRE  := .venv moulinette/.venv
+# UV_BASE  :=
+# UV_ENV   :=
+# UV_MOU   := UV_PYTHON=3.12
 
 install:
 	$(UV_BASE) uv python install 3.10 3.12

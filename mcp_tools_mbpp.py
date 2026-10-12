@@ -19,10 +19,11 @@ def truncate(text: str) -> str:
         return text
     return (
         f"[output truncated: showing last {MAX_OUTPUT_CHARS} of "
-        f"{len(text)} characters\n]" + text[-MAX_OUTPUT_CHARS:]
+        f"{len(text)} characters]\n" + text[-MAX_OUTPUT_CHARS:]
     )
 
 
+# save the function in an intern mcp register (dict{name: the function})
 @mcp.tool()
 def run_tests(code: str, test_list: list[str]) -> str:
     """
@@ -49,7 +50,7 @@ def run_tests(code: str, test_list: list[str]) -> str:
         return json.dumps({
             "success": False,
             "output": (
-                f"Tests timed out after {TEST_TIMEOUT_SECONDS} seconds."
+                f"Tests timed out after {TEST_TIMEOUT_SECONDS} seconds. "
                 "The code probably contains an infinite loop.")
         })
 

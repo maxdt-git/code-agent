@@ -110,7 +110,8 @@ class Executor:
     def __init__(
             self,
             config: SandboxConfig,
-            on_output: Callable[[str], None] | None = None
+            on_output: Callable[[str], None] | None = None,
+            tools: dict[str, Callable[..., Any]] | None = None
     ) -> None:
         # globals of the executed code
         # kept between two execute() -> persistent variables
@@ -121,6 +122,7 @@ class Executor:
         self._builtins = make_safe_builtins(
             safe_import, safe_open)
         self._on_output = on_output
+        self._tools = tools if tools is not None else {}
 
     def execute(self, code: str) -> ExecutionResult:
         """
@@ -135,6 +137,7 @@ class Executor:
         # __builtins__ -> exec uses this dict instead of the real builtins
         self._name_space["__builtins__"] = self._builtins
         self._name_space["__name__"] = "__sandbox__"
+        self._name_space.update(self._tools)
         self._name_space["final_answer"] = final_answer
 
         # every print of the code goes to test_file, not to the terminal
