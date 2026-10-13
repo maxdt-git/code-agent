@@ -28,7 +28,7 @@ def signature(tool: Any) -> str:
     One tool as a python signature, built from him input_schema
     """
     # get schema and dict where the parameters are
-    schema = tool.input_schema
+    schema = tool.inputSchema
     # we read the list of necessary parameters
     required = schema.get("required", [])
     # stock all parameters inside

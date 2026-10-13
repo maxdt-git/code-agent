@@ -4,6 +4,10 @@ from agent_smith.sandbox.executor import ExecutionResult
 import argparse
 from pathlib import Path
 import sys
+from mcp import StdioServerParameters
+from agent_smith.sandbox.mcp_bridge import McpBridge
+import shlex
+import ast
 
 
 # __file__ -> src/agent_smith/sandbox/cli.py
@@ -28,13 +32,17 @@ def parse_args() -> argparse.Namespace:
         "config", nargs="?", default=None,
         help="path to a sandbox json config file"
     )
+    # refuse both options together
+    group = parser.add_mutually_exclusive_group()
     # command that starts an MCP server, talking on stdin/stdout
-    parser.add_argument(
+    group.add_argument(
         "--mcp-stdio", default=None,
+        help="command that start an MCP server over stdio"
     )
     # URL of an MCP server already running (HTTP)
-    parser.add_argument(
+    group.add_argument(
         "--mcp-server", default=None,
+        help="URL of a streamable HTTP MCP server"
     )
 
     return parser.parse_args()
@@ -96,6 +104,54 @@ def read_entry() -> str | None:
     return "\n".join(lines)
 
 
+def split_statements(source: str) -> list[str]:
+    """
+    Cut a script into multiple statements
+    """
+    # analyse text
+    try:
+        tree = ast.parse(source)
+    # if we cant cut it or just syntaxerror
+    except SyntaxError:
+        return [source]
+
+    lines = source.splitlines()
+    statements: list[str] = []
+    # last treat line
+    done: int = 0
+
+    for node in tree.body:
+        # in case there is a decorator (func or class)
+        first = min(
+            [node.lineno] +
+            [d.lineno for d in getattr(node, "decorator_list", [])])
+        if first <= done:
+            continue
+        done = node.end_lineno or first
+        # append all the block we cut
+        statements.append("\n".join(lines[first - 1:done]))
+    return statements
+
+
+def connect(args: argparse.Namespace) -> McpBridge | None:
+    """
+    Connect to the mcp server given on the command line if there is one
+    """
+    if args.mcp_stdio is not None:
+        # split like a shell : 'python x.py' -> ['python', 'x.py']
+        # shlex to analyse and manipulate python str like a shell
+        # -> respect guill
+        parts = shlex.split(args.mcp_stdio)
+        if not parts:
+            raise ValueError("--mcp-stdio needs a command")
+        return McpBridge(
+            StdioServerParameters(command=parts[0], args=parts[1:])
+        )
+    if args.mcp_server is not None:
+        return McpBridge(args.mcp_server)
+    return None
+
+
 def main() -> None:
     """
     Interactive sandbox, read code, run it and print the result
@@ -107,9 +163,26 @@ def main() -> None:
         print(f"cannot load sandbox config: {e}")
         sys.exit(1)
 
-    # starts the child process
-    sandbox = Sandbox(config)
     try:
+        bridge = connect(args)
+        # connection failed or empty command
+    except (RuntimeError, ValueError) as e:
+        print(f"cannot start mcp server: {e}")
+        sys.exit(1)
+
+    if bridge is not None:
+        names = ", ".join(tool.name for tool in bridge.list_tools())
+        print(f"MCP tools: {names}")
+
+    # starts the child process
+    sandbox = Sandbox(config, bridge)
+    try:
+        if not sys.stdin.isatty():
+            for statement in split_statements(sys.stdin.read()):
+                if statement.strip() == "exit":
+                    break
+                show(sandbox.execute(statement))
+            return
         while True:
             entry = read_entry()
             # Ctrl+D -> newline so the shell prompt starts clean
@@ -119,6 +192,10 @@ def main() -> None:
             # "exit" is a command of the REPL, not python code
             if entry.strip() == "exit":
                 break
+            if entry.strip() == "manual":
+                print(sandbox.manual)
+                continue
+
             # empty line -> just show the prompt again
             if not entry.strip():
                 continue
@@ -129,4 +206,11 @@ def main() -> None:
         print()
     # always runs, even on error -> the child is never left behind
     finally:
+        # first close sandbox or it can call non existent tools
         sandbox.close()
+        if bridge is not None:
+            bridge.close()
+
+
+if __name__ == "__main__":
+    main()

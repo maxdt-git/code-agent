@@ -10,7 +10,7 @@ UV_MOU   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv-moulinette UV_PYT
 install:
 	$(UV_BASE) uv python install 3.10 3.12
 	$(UV_ENV) uv sync
-	cd moulinette && $(UV_MOU) uv sync
+	cd moulinette && $(UV_MOU) uv sync --reinstall-package moulinette
 
 run:
 	$(UV_ENV) uv run python -m agent_smith
@@ -38,4 +38,31 @@ lint-strict:
 	--ignore-missing-imports --disallow-untyped-defs --check-untyped-defs \
 	--strict
 
+# Launch interactive sandbox
+launch-sandbox:
+	$(UV_ENV) uv run sandbox
+
+# With custom configuration
+sandbox-config:
+	uv run sandbox sandbox_template.json
+
+# With MBPP tools (stdio)
+sandbox-mbpp-stdio:
+	uv run sandbox --mcp-stdio "python mcp_tools_mbpp.py" sandbox_template.json
+
+# With MBPP tools (HTTP)
+sandbox-mbpp-server:
+	uv run sandbox --mcp-server <URL>
+
+# With SWE-bench tools
+sandbox-swe-bench:
+	uv run sandbox --mcp-stdio "python mcp_tools_swebench.py" sandbox_template.json
+
+dump-mbpp:
+	mkdir -p cache
+	cd moulinette && $(UV_MOU) uv run moulinette_eval dump mbpp \
+		--output ../cache/mbpp_task.json
+
 .PHONY: install run debug clean fclean lint lint-strict
+.PHONY: launch-sandbox sandbox-config sandbox-mbpp-stdio sandbox-mbpp-server
+.PHONY: sandbox-swe-bench dump-mbpp

@@ -5,6 +5,7 @@ from agent_smith.sandbox.executor import ExecutionResult
 import time
 from typing import Any
 from agent_smith.sandbox.mcp_bridge import McpBridge
+from agent_smith.sandbox.manual import build_manual
 
 
 class Sandbox:
@@ -21,6 +22,7 @@ class Sandbox:
         self._tools: dict[str, Any] = {}
         if bridge is not None:
             self._tools = {tool.name: tool for tool in bridge.list_tools()}
+        self.manual = build_manual(list(self._tools.values()), self._config)
         self._start()
 
     def _start(self) -> None:
@@ -39,7 +41,7 @@ class Sandbox:
         # daemon=True -> if process stop, kill child
         self._process = ctx.Process(
             target=worker_main,
-            args=(child_conn, self._config, list(self._tools)),
+            args=(child_conn, self._config, list(self._tools), self.manual),
             daemon=True
         )
         # .start() -> start child
@@ -154,7 +156,7 @@ class Sandbox:
         """
         try:
             assert self._bridge is not None
-            schema = self._tools[name].input_schema
+            schema = self._tools[name].inputSchema
             # parameter names in the order declared by the tool
             names = list(schema.get("properties", {}))
             # if there is to much args

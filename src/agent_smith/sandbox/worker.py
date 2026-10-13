@@ -12,7 +12,8 @@ from collections.abc import Callable
 def worker_main(
         conn: Connection,
         config: SandboxConfig,
-        tool_names: list[str]
+        tool_names: list[str],
+        manual: str
 ) -> None:
     """
     Child process loop, receive code and send back result
@@ -41,8 +42,9 @@ def worker_main(
         return tool
 
     # build the dict
-    tools = {name: make_tool(name) for name in tool_names}
-
+    tools: dict[str, Any] = {name: make_tool(name) for name in tool_names}
+    # manual readable fromthe code
+    tools["sandbox_manual"] = manual
     # one executor for the whole life of the child
     # -> variables stay between two executions
     execute = Executor(config, on_output=send_output, tools=tools)

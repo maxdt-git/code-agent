@@ -111,7 +111,7 @@ class Executor:
             self,
             config: SandboxConfig,
             on_output: Callable[[str], None] | None = None,
-            tools: dict[str, Callable[..., Any]] | None = None
+            tools: dict[str, Any] | None = None
     ) -> None:
         # globals of the executed code
         # kept between two execute() -> persistent variables

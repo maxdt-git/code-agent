@@ -1,4 +1,4 @@
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 import json
 import subprocess
 import sys
@@ -8,7 +8,7 @@ TEST_TIMEOUT_SECONDS = 10
 MAX_OUTPUT_CHARS = 1000
 
 
-mcp = MCPServer("mbpp-tools")
+mcp = FastMCP("mbpp-tools")
 
 
 def truncate(text: str) -> str:
@@ -29,8 +29,8 @@ def run_tests(code: str, test_list: list[str]) -> str:
     """
     Run a candidate solution against test assertion
 
-    Returns a JSON string with "success" (true when assertion passed")
-    and "output" (stdout, stderr ans error messages)
+    Returns a JSON string with "success" (true when assertion passed)
+    and "output" (stdout, stderr and error messages)
     """
     script = code + "\n" + "\n".join(test_list)
 
@@ -63,4 +63,8 @@ def run_tests(code: str, test_list: list[str]) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    # "python mcp_tools_mbpp.py --http" -> streamable HTTP on port 8000
+    if "--http" in sys.argv:
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run()

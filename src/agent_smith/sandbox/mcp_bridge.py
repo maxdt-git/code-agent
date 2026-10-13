@@ -1,6 +1,9 @@
 import asyncio
 import threading
-from mcp import Client, StdioServerParameters
+from contextlib import AsyncExitStack
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from typing import Any
 
 
@@ -27,7 +30,7 @@ class McpBridge:
         # one wait with wait and other calls set
         self._ready = threading.Event()
         self._error: BaseException | None = None
-        self._client: Client | None = None
+        self._client: ClientSession | None = None
         # second thread of the same process -> self._run
         # daemon=True -> stop when program ends
         self._thread = threading.Thread(
@@ -58,8 +61,25 @@ class McpBridge:
         try:
             # open the connection
             # laucnh the server as a subprocess
-            async with Client(self._target) as client:
-                self._client = client
+            # AsyncExitStack keep multiple connec open
+            # closethem in other order
+            async with AsyncExitStack() as stack:
+                # streamable connect to an already launch serv
+                if isinstance(self._target, str):
+                    read, write, _ = await stack.enter_async_context(
+                        streamable_http_client(self._target)
+                    )
+                else:
+                    # stdio_client launch the command as subprocess
+                    # and connect to it entry and standard output
+                    read, write = await stack.enter_async_context(
+                        stdio_client(self._target)
+                    )
+                session = await stack.enter_async_context(
+                    ClientSession(read, write)
+                )
+                await session.initialize()
+                self._client = session
                 # when the connec is ready, raise the flag
                 # who deblocks constructor
                 self._ready.set()
@@ -76,7 +96,6 @@ class McpBridge:
         """
         Run a coroutine on the backround loop and wait for its result
         """
-        #
         future = asyncio.run_coroutine_threadsafe(corou, self._loop)
         # a ticket who represents the coming answer
         return future.result()
@@ -117,6 +136,41 @@ class McpBridge:
         self._loop.call_soon_threadsafe(self._stop.set)
         # wait 5sec the fil is really done
         self._thread.join(timeout=5)
+
+    def _listing(
+            self,
+            corou: Any,
+            field: str
+    ) -> list[Any]:
+        """
+        Run a list request, an empty list if the server does not support it
+        """
+        try:
+            return list(getattr(self._call(corou), field))
+        except Exception:
+            return []
+
+    def list_resources(self) -> list[Any]:
+        """
+        Resources of the server (uri, name, description)
+        """
+        assert self._client is not None
+        return self._listing(self._client.list_resources(), "resources")
+
+    def list_resource_templates(self) -> list[Any]:
+        """
+        Resource templates of the server (uri_template, name, description)
+        """
+        assert self._client is not None
+        return self._listing(
+            self._client.list_resource_templates(), "resourceTemplates")
+
+    def list_prompts(self) -> list[Any]:
+        """
+        Prompts of the server (name, description, arguments)
+        """
+        assert self._client is not None
+        return self._listing(self._client.list_prompts(), "prompts")
 
 
 # if __name__ == "__main__":
