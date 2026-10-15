@@ -49,21 +49,27 @@ def is_python(text: str) -> bool:
     return any(isinstance(node, kinds) for node in ast.walk(tree))
 
 
-def python_block(text: str) -> tuple[str, bool] | None:
+def python_blocks(text: str) -> tuple[list[str], bool] | None:
     """
-    Code of the first ``` block, none in there is no block
-    True if closed else False
+    Code of every ``` block in order, none in there is no block
+    False if the last on is not closed
     """
-    start = text.find("```")
-    if start == -1:
-        return None
-    start_end = text.find("\n", start)
-    if start_end == -1:
-        return None
-    end = text.find("```", start_end)
-    if end == -1:
-        return text[start_end + 1:].strip(), False
-    return text[start_end + 1:end].strip(), True
+    blocks: list[str] = []
+    position = 0
+    while True:
+        start = text.find("```", position)
+        if start == -1:
+            break
+        start_end = text.find("\n", start)
+        if start_end == -1:
+            break
+        end = text.find("```", start_end)
+        if end == -1:
+            blocks.append(text[start_end + 1:].strip())
+            return blocks, False
+        blocks.append(text[start_end + 1:end].strip())
+        position = end + 3
+    return (blocks, True) if blocks else None
 
 
 def between(
@@ -151,16 +157,19 @@ def extract_code(text: str) -> Extraction:
     """
     Return the code to execute and if needed how it was interpreted
     """
-    pyt_block = python_block(text)
-    if pyt_block is not None and pyt_block[0]:
-        code, closed = pyt_block
-        if closed:
-            return Extraction(code)
-        return Extraction(
-            code,
-            "Your code was not closed with ```. Everything after "
-            "the opening ``` was executed as code."
-        )
+    pyt_blocks = python_blocks(text)
+    if pyt_blocks is not None:
+        blocks, closed = pyt_blocks
+        if blocks:
+            notes: list[str] = []
+            if len(blocks) > 1:
+                notes.append(f"Found {len(blocks)} code blocks: they were all "
+                             "executed, in order. Write only one next time.")
+
+            if not closed:
+                notes.append("Your code was not closed with ```. Everything "
+                             "after the opening ``` was executed as code.")
+            return Extraction("\n".join(blocks), " ".join(notes) or None)
 
     xml = xml_block(text)
     if xml is not None:
@@ -214,18 +223,18 @@ def extract_code(text: str) -> Extraction:
     )
 
 
-if __name__ == "__main__":
-    print(between(
-        "<invoke name='tool'><parameter name='p'>v</parameter></invoke>",
-        "parameter name='", "'"))
+# if __name__ == "__main__":
+#     print(between(
+#         "<invoke name='tool'><parameter name='p'>v</parameter></invoke>",
+#         "parameter name='", "'"))
 
-    for text in [
-        "Thought: test.\n```python\nx = 1\nprint(x)\n```<end_code>",
-        "Let me try\n```python\nprint(3)",
-        '<invoke name="read_file"><parameter name="filepath">a.py'
-        '</parameter><parameter name="start_line">1</parameter></invoke>',
-        '<tool_call>{"name": "ping", "arguments": {}}',
-        "Action: read_file\nAction Input: {\"filepath\": \"a.py\"}",
-        "I am not sure what to do next.",
-    ]:
-        print(extract_code(text))
+#     for text in [
+#         "Thought: test.\n```python\nx = 1\nprint(x)\n```<end_code>",
+#         "Let me try\n```python\nprint(3)",
+#         '<invoke name="read_file"><parameter name="filepath">a.py'
+#         '</parameter><parameter name="start_line">1</parameter></invoke>',
+#         '<tool_call>{"name": "ping", "arguments": {}}',
+#         "Action: read_file\nAction Input: {\"filepath\": \"a.py\"}",
+#         "I am not sure what to do next.",
+#     ]:
+#         print(extract_code(text))

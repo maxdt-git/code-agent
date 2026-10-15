@@ -8,6 +8,7 @@ from mcp import StdioServerParameters
 from agent_smith.sandbox.mcp_bridge import McpBridge
 import shlex
 import ast
+import os
 
 
 # __file__ -> src/agent_smith/sandbox/cli.py
@@ -133,6 +134,9 @@ def split_statements(source: str) -> list[str]:
     return statements
 
 
+TOOL_ENV_VARS = ("TESTBED_PATH", "SWEBENCH_CONTAINER")
+
+
 def connect(args: argparse.Namespace) -> McpBridge | None:
     """
     Connect to the mcp server given on the command line if there is one
@@ -144,8 +148,12 @@ def connect(args: argparse.Namespace) -> McpBridge | None:
         parts = shlex.split(args.mcp_stdio)
         if not parts:
             raise ValueError("--mcp-stdio needs a command")
+        env = {name: os.environ[name] for name in TOOL_ENV_VARS if name in os.environ}
+
         return McpBridge(
-            StdioServerParameters(command=parts[0], args=parts[1:])
+            StdioServerParameters(
+                command=parts[0], args=parts[1:],
+                env=env)
         )
     if args.mcp_server is not None:
         return McpBridge(args.mcp_server)
