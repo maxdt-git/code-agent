@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 import subprocess
 import os
 import shlex
-from mcp_tools_mbpp import truncate
 
 
 COMMAND_TIMEOUT = 60
@@ -27,6 +26,29 @@ def to_local(path: str) -> str:
             path == "/testbed" or path.startswith("/testbed/")):
         return TESTBED + path[len("/testbed"):]
     return path
+
+
+def to_agent(path: str) -> str:
+    """
+    Inverse of to_local: show a local path as /testbed/... to the agent
+    """
+    if path == TESTBED or path.startswith(TESTBED + "/"):
+        return "/testbed" + path[len(TESTBED):]
+    return path
+
+
+def truncate(text: str, keep: str = "end") -> str:
+    """
+    Cut a long output to MAX_OUTPUT_CHARS, keeping its start or its end
+    """
+    if len(text) <= MAX_OUTPUT_CHARS:
+        return text
+    if keep == "start":
+        return (text[:MAX_OUTPUT_CHARS] +
+                f"\n[output truncated: showing first {MAX_OUTPUT_CHARS} "
+                f"of {len(text)} characters]")
+    return (f"[output truncated: showing last {MAX_OUTPUT_CHARS} of "
+            f"{len(text)} characters]\n" + text[-MAX_OUTPUT_CHARS:])
 
 
 def shell(
@@ -79,15 +101,6 @@ def run_command(
     )
 
 
-def to_agent(path: str) -> str:
-    """
-    Inverse of to_local: show a local path as /testbed/... to the agent
-    """
-    if path == TESTBED or path.startswith(TESTBED + "/"):
-        return "/testbed" + path[len(TESTBED):]
-    return path
-
-
 @mcp.tool()
 def list_files(
     directory: str,
@@ -112,7 +125,7 @@ def list_files(
     if not files:
         return f"No file matches {pattern} in {directory}"
 
-    return truncate("\n".join(files))
+    return truncate("\n".join(files), keep="start")
 
 
 @mcp.tool()
@@ -138,7 +151,7 @@ def read_file(
     if not rows:
         return f"{filepath} has only {len(data)} rows"
 
-    return truncate("\n".join(rows))
+    return truncate("\n".join(rows), keep="start")
 
 
 @mcp.tool()
@@ -159,10 +172,20 @@ def get_patch() -> str:
 @mcp.tool()
 def search_code(pattern: str, file_pattern: str = "*.py") -> str:
     """
-    Perform a grep-like search in the codebase
+    Perform a grep-like search of file_pattern in the codebase, file_pattern
+    is a path or or global name "*.py"
     """
-    command = (f"grep -rnE --include={shlex.quote(file_pattern)} "
-           f"--exclude-dir=.git -- {shlex.quote(pattern)} .")
+    if "/" in file_pattern:
+        # a path like sympy/core/add.py: search in it, not by file name
+        where = shlex.quote(file_pattern.removeprefix("/testbed/"))
+        include = ""
+    else:
+        where = "."
+        include = f"--include={shlex.quote(file_pattern)}"
+
+    command = (f"grep -rnHE {include} --exclude-dir=.git "
+               f"-- {shlex.quote(pattern)} {where}")
+
     code, out, err = shell(command)
     if code == 1:
         return f"No match for {pattern!r} in {file_pattern} files"
