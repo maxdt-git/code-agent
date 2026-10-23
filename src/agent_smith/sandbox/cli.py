@@ -134,7 +134,7 @@ def split_statements(source: str) -> list[str]:
     return statements
 
 
-TOOL_ENV_VARS = ("TESTBED_PATH", "SWEBENCH_CONTAINER")
+TOOL_ENV_VARS = ("TESTBED_PATH", "SWEBENCH_CONTAINER", "EVAL_SCRIPT")
 
 
 def connect(args: argparse.Namespace) -> McpBridge | None:
@@ -148,7 +148,8 @@ def connect(args: argparse.Namespace) -> McpBridge | None:
         parts = shlex.split(args.mcp_stdio)
         if not parts:
             raise ValueError("--mcp-stdio needs a command")
-        env = {name: os.environ[name] for name in TOOL_ENV_VARS if name in os.environ}
+        env = {name: os.environ[name]
+               for name in TOOL_ENV_VARS if name in os.environ}
 
         return McpBridge(
             StdioServerParameters(

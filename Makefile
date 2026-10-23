@@ -63,6 +63,27 @@ dump-mbpp:
 	cd moulinette && $(UV_MOU) uv run moulinette_eval dump mbpp \
 		--output ../cache/mbpp_task.json
 
+# Exam scripts given by the school
+# optional model: make exam-mbpp MODEL=name PROVIDER=https://provider.api/v1
+EXAM_ARGS  := --student-path . --moulinette-path moulinette --env-file .env
+MODEL_ARGS := $(if $(MODEL),--model-name $(MODEL)) \
+	$(if $(PROVIDER),--provider-url $(PROVIDER))
+
+exam-sandbox:
+	./exams/exam_sandbox.sh $(EXAM_ARGS)
+
+exam-mbpp:
+	./exams/exam_mbpp.sh $(EXAM_ARGS) $(MODEL_ARGS)
+
+exam-swebench:
+	./exams/exam_swebench.sh $(EXAM_ARGS) $(MODEL_ARGS)
+
+exam-anticheat:
+	./exams/exam_anticheat.sh --student-path .
+
+exams: exam-sandbox exam-mbpp exam-anticheat
+
 .PHONY: install run debug clean fclean lint lint-strict
 .PHONY: launch-sandbox sandbox-config sandbox-mbpp-stdio sandbox-mbpp-server
 .PHONY: sandbox-swe-bench dump-mbpp
+.PHONY: exam-sandbox exam-mbpp exam-swebench exam-anticheat exams

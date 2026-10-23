@@ -26,15 +26,6 @@ class ExecutionResult:
     timed_out: bool = False
 
 
-class FinalAnswer(BaseException):
-    """
-    Raised by final answer to stop execution and keep answer
-    """
-    def __init__(self, answer: str) -> None:
-        super().__init__(answer)
-        self.answer = answer
-
-
 class OutputStream(io.StringIO):
     """
     StringIO reports all written text to a callback
@@ -92,16 +83,6 @@ class OutputStream(io.StringIO):
         return len(text)
 
 
-def final_answer(answer: object) -> None:
-    """
-    Stop execution and give the best answer back to the agent
-    """
-    # an exception stops the code at once, wherever it is
-    # FinalAnswer is a BaseException -> "except Exception" in the
-    # code of the LLM cannot catch it by accident
-    raise FinalAnswer(str(answer))
-
-
 class Executor:
     """
     Class to execute the code, name_space is a dict of the
@@ -123,6 +104,7 @@ class Executor:
             safe_import, safe_open)
         self._on_output = on_output
         self._tools = tools if tools is not None else {}
+        self._answer: str | None = None
 
     def execute(self, code: str) -> ExecutionResult:
         """
@@ -132,12 +114,21 @@ class Executor:
         test_file = OutputStream(self._on_output)
         error: str | None = None
         answer: str | None = None
+        self._answer = None
 
         # put back at each execution, in case the code replaced them
         # __builtins__ -> exec uses this dict instead of the real builtins
         self._name_space["__builtins__"] = self._builtins
         self._name_space["__name__"] = "__sandbox__"
         self._name_space.update(self._tools)
+
+        def final_answer(answer: object) -> str:
+            """
+            Record the final answer: the agent loop ends after this step
+            """
+            self._answer = str(answer)
+            return "Final answer recorded."
+
         self._name_space["final_answer"] = final_answer
 
         # every print of the code goes to test_file, not to the terminal
@@ -149,8 +140,6 @@ class Executor:
                 check_tree(tree)
                 # 3. run it with our namespace and our builtins
                 exec(compile(tree, "<sandbox>", "exec"), self._name_space)
-            except FinalAnswer as e:
-                answer = e.answer
             # Exception only -> KeyboardInterrupt and SystemExit
             # are not caught here
             except Exception as e:
@@ -163,7 +152,7 @@ class Executor:
 
         # what the code printed + the truncation message if any
         text = test_file.getvalue() + test_file.truncate_message()
-
+        answer = self._answer
         return ExecutionResult(text, error, answer)
 
 

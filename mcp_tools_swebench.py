@@ -2,21 +2,65 @@ from mcp.server.fastmcp import FastMCP
 import subprocess
 import os
 import shlex
+from mcp_tools_mbpp import truncate
 
 
 COMMAND_TIMEOUT = 60
+TESTS_TIMEOUT = 600
+MAX_OUTPUT_CHARS = 10000
+MAX_MATCHES = 100
 TESTBED = os.environ.get("TESTBED_PATH", "/testbed")
+# set by agent when repo in container
+CONTAINER = os.environ.get("SWEBENCH_CONTAINER")
+# path of eval script
+EVAL_SCRIPT = os.environ.get("EVAL_SCRIPT")
+DOCKER = os.environ.get("DOCKER_CMD", "docker")
 
 mcp = FastMCP("swebench-tool")
 
 
 def to_local(path: str) -> str:
     """
-    Map an agent path (/testbed/...) to the real folder of TESTBED_PATH
+    /testbed/... -> real folder when no running container
     """
-    if path == "/testbed" or path.startswith("/testbed/"):
+    if CONTAINER is None and (
+            path == "/testbed" or path.startswith("/testbed/")):
         return TESTBED + path[len("/testbed"):]
     return path
+
+
+def shell(
+        command: str,
+        workdir: str = "/testbed/",
+        timeout: int = COMMAND_TIMEOUT,
+        stdin: str | None = None
+) -> tuple[int, str, str]:
+    """
+    Run a bash command, in the container if there is one, else locally.
+    Returns (exit code, stdout, stderr)
+    """
+    if CONTAINER is not None:
+        # -w choose start folder -> workdir
+        # -i keep open when need to write
+        argv = (DOCKER, "exec", "-i", "-w", workdir, CONTAINER,
+                "bash", "-c", command)
+        cwd = None
+    else:
+        argv = ["bash", "-c", command]
+        cwd = to_local(workdir)
+
+    try:
+        done = subprocess.run(
+            argv, cwd=cwd, input=stdin, capture_output=True,
+            text=True, timeout=timeout, errors="replace"
+        )
+
+    except subprocess.TimeoutExpired:
+        return 124, "", f"Timed out after {timeout} seconds"
+    except OSError as e:
+        return 1, "", str(e)
+
+    return done.returncode, done.stdout, done.stderr
 
 
 @mcp.tool()
@@ -27,24 +71,11 @@ def run_command(
     """
     Run a shell command in workdir, return stdout, stderr and exit code
     """
-    try:
-        complete = subprocess.run(
-            ["bash", "-c", command],
-            cwd=to_local(workdir),
-            capture_output=True,
-            text=True,
-            timeout=COMMAND_TIMEOUT
-        )
-
-    except subprocess.TimeoutExpired:
-        return f"Command timed out after {COMMAND_TIMEOUT} seconds: {command}"
-    except OSError as e:
-        return f"Cannot run the command in {workdir}: {e}"
-
-    return (
-        f"exit code: {complete.returncode}\n"
-        f"--- stdout ---\n{complete.stdout or '(empty)'}\n"
-        f"--- stderr ---\n{complete.stderr or '(empty)'}"
+    code, out, err = shell(command, workdir)
+    return truncate(
+        f"exit code: {code}\n"
+        f"--- stdout ---\n{out or '(empty)'}\n"
+        f"--- stderr ---\n{err or '(empty)'}"
     )
 
 
@@ -65,24 +96,23 @@ def list_files(
     """
     List files in a directory matching a given pattern
     """
-    local = to_local(directory)
-    command = (f"find {shlex.quote(local)} -type f -name"
-               f"{shlex.quote(pattern)} -not -path '*/.git/*'")
-    try:
-        complete = subprocess.run(
-            ["bash", "-c", command],
-            capture_output=True, text=True,
-            timeout=COMMAND_TIMEOUT
-        )
+    dir = "." if directory.rstrip("/") == "/testbed" else directory
+    code, out, err = shell(
+        f"find {shlex.quote(dir)} -type f -name {shlex.quote(pattern)} "
+        "-not -path '*/.git/*'"
+    )
+    if code != 0:
+        return f"Cannot list {directory}: {err.strip()}"
 
-    except subprocess.TimeoutExpired:
-        return f"Command timed out after {COMMAND_TIMEOUT} seconds: {command}"
-    if complete.returncode != 0:
-        return f"Cannot list {directory}: {complete.stdout.splitlines()}"
-    files = sorted(to_agent(line) for line in complete.stdout.splitlines())
+    files = sorted(
+        "/testbed/" + f.removeprefix("./") if f.startswith("./") else f
+        for f in out.splitlines()
+    )
+
     if not files:
-        return f"No file matches {pattern!r} in {directory}"
-    return "\n".join(files)
+        return f"No file matches {pattern} in {directory}"
+
+    return truncate("\n".join(files))
 
 
 @mcp.tool()
@@ -95,30 +125,152 @@ def read_file(
     Read the content of a file with line numbers, output format
     is similar to cat -n
     """
-    local = to_local(filepath)
-    try:
-        # replace illisble octet
-        with open(local, encoding="utf-8", errors="replace") as f:
-            data = f.read().splitlines()
-    except FileNotFoundError:
-        return f"Cannot find a file with the path: {filepath}"
-    except OSError as e:
-        return f"Cannot open the file {filepath}, error: {e}"
+    target = filepath if CONTAINER else to_local(filepath)
+    code, out, err = shell(f"cat {shlex.quote(target)}")
+    if code != 0:
+        return f"Cannot read {filepath}: {err.strip()}"
 
-    if end_line is None:
-        end_line = len(data)
-    if start_line > end_line:
-        return f"{filepath} has only {len(data)} lines"
+    data = out.splitlines()
+    end = len(data) if end_line is None else end_line
+    rows = [f"{n}: {line}" for n, line in enumerate(
+        data[start_line - 1:end], start=start_line
+    )]
+    if not rows:
+        return f"{filepath} has only {len(data)} rows"
 
-    selected = data[start_line - 1:end_line]
-    result = [f"{number}: {line}"
-              for number, line in enumerate(selected, start=start_line)]
+    return truncate("\n".join(rows))
 
-    if not result:
-        return f"{filepath} has only {len(data)} lines"
 
-    return "\n".join(result)
+@mcp.tool()
+def get_patch() -> str:
+    """
+    Retrieve the unified git diff of all changes made to the repository
+    """
+    code, out, err = shell("git -c core.fileMode=false diff")
+    if code != 0:
+        return err
 
+    if not out:
+        return "No changes yet"
+
+    return out
+
+
+@mcp.tool()
+def search_code(pattern: str, file_pattern: str = "*.py") -> str:
+    """
+    Perform a grep-like search in the codebase
+    """
+    command = (f"grep -rnE --include={shlex.quote(file_pattern)} "
+           f"--exclude-dir=.git -- {shlex.quote(pattern)} .")
+    code, out, err = shell(command)
+    if code == 1:
+        return f"No match for {pattern!r} in {file_pattern} files"
+    if code != 0:
+        return f"search_code failed: {err.strip()}"
+
+    results: list[str] = []
+    for line in out.splitlines():
+        path, number, content = line.split(":", 2)
+        results.append(f"/testbed/{path.removeprefix('./')}:{number} {content}")
+
+    total = len(results)
+    results = results[:MAX_MATCHES]
+    if total > MAX_MATCHES:
+        results.append(f"[{total - MAX_MATCHES} more matches not shown, "
+                       "use a more precise pattern]")
+
+    return "\n".join(results)
+
+
+def grep_word(name: str) -> list[tuple[str, str, str]]:
+    """
+    Lines of .py files where name appears as a whole word,
+    as (path, line number, content)
+    """
+    code, out, _ = shell(f"grep -rnwF --include='*.py' --exclude-dir=.git "
+                         f"-- {shlex.quote(name)} .")
+    if code != 0:
+        return []
+    rows: list[tuple[str, str, str]] = []
+    for line in out.splitlines():
+        path, number, content = line.split(":", 2)
+        rows.append(("/testbed/" + path.removeprefix("./"), number, content))
+    return rows
+
+
+@mcp.tool()
+def search_function_or_class_definition_in_code(name: str) -> str:
+    """
+    Find where a function or class is defined, same format as search_code
+    """
+    starts = (f"def {name}(", f"async def {name}(",
+              f"class {name}(", f"class {name}:")
+    rows = [row for row in grep_word(name)
+            if row[2].strip().startswith(starts)]
+    if not rows:
+        return f"No definition of {name!r} found"
+    return "\n".join(f"{path}:{number} {content}"
+                     for path, number, content in rows)
+
+
+@mcp.tool()
+def find_references(name: str, filepath: str, line: int) -> str:
+    """
+    Find every usage of a symbol, same format as search_code
+    """
+    rows = grep_word(name)
+    if not rows:
+        return f"No reference to {name!r} found"
+    shown = [f"{path}:{number} {content}"
+             for path, number, content in rows[:MAX_MATCHES]]
+    if len(rows) > MAX_MATCHES:
+        shown.append(f"[{len(rows) - MAX_MATCHES} more references not shown]")
+    return "\n".join(shown)
+
+
+@mcp.tool()
+def edit_file(filepath: str, old_str: str, new_str: str) -> str:
+    """
+    Replace the exact text old_str by new_str in a file (once)
+    """
+    target = filepath if CONTAINER else to_local(filepath)
+    code, out, err = shell(f"cat {shlex.quote(target)}")
+    if code != 0:
+        return f"Cannot read {filepath}: {err.strip()}"
+    count = out.count(old_str)
+    if count == 0:
+        return (
+            f"{old_str} not found, (must be exactly the same, "
+            "use read_file)")
+    if count > 1:
+        return f"Found {count} times, try to make it unique"
+
+    new_content = out.replace(old_str, new_str, 1)
+    # write in the file
+    code, _, err = shell(f"cat > {shlex.quote(target)}", stdin=new_content)
+    if code != 0:
+        return f"Cannot write {filepath}: {err.strip()}"
+
+
+    if target.endswith(".py"):
+        returncode, _, err = shell(f"python -m py_compile {shlex.quote(target)}")
+        if returncode != 0:
+            shell(f"cat > {shlex.quote(target)}", stdin=out)
+            return (f"Edit rejected: it breaks the syntax of {filepath}, "
+                    f"the file was restored.\n{err.strip()}")
+    return f"Edited {filepath}: 1 occurence replaced"
+
+
+@mcp.tool()
+def run_tests() -> str:
+    """
+    Run the evaluation script of the task and return its output
+    """
+    if EVAL_SCRIPT is None:
+        return "Noe evaluation script provided"
+    code, out, err = shell(f"bash {shlex.quote(EVAL_SCRIPT)}", timeout=TESTS_TIMEOUT)
+    return f"exit code: {code}\n{truncate(out + err)}"
 
 
 if __name__ == "__main__":
