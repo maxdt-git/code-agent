@@ -4,7 +4,7 @@ from agent_smith.models import StepMetrics
 from agent_smith.sandbox.sandbox import Sandbox
 from dataclasses import dataclass
 from agent_smith.llm.client import LLMClient
-from agent_smith.llm.errors import LLMUnavailableError
+from agent_smith.llm.errors import LLMError
 
 
 def format_observation(
@@ -107,7 +107,7 @@ def run_agent(
             messages.append(
                 {"role": "assistant", "content": text + "<end_code>"})
             messages.append({"role": "user", "content": observation})
-    except LLMUnavailableError as e:
+    except LLMError as e:
         return AgentRun(None, steps, f"LLM unavailable: {e}")
     return AgentRun(None, steps, f"no final_answer after {max_iterations}")
 

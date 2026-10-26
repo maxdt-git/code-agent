@@ -18,14 +18,27 @@ run:
 debug:
 	$(UV_ENV) uv run python -m pdb -m agent_smith
 
+DOCKER ?= docker
+
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".vscode" -exec rm -rf {} +
+	@# containers left behind by a crashed agent (name set in docker_env.py)
+	-$(DOCKER) ps -aq --filter "name=agent_smith_" | xargs -r $(DOCKER) rm -f
 
 fclean: clean
 	rm -rf $(GOINFRE)
+	rm -rf cache
+
+# NOT in fclean: evaluations/ holds the runs behind BENCHMARK_REPORT.md
+clean-evals:
+	rm -rf evaluations
+
+# NOT in fclean: SWE-bench images weigh several GB and take long to pull
+clean-images:
+	-$(DOCKER) images -q "swebench/*" | xargs -r $(DOCKER) rmi -f
 
 lint:
 	$(UV_ENV) uv run flake8 src --exclude=src/agent_smith/models.py
@@ -83,7 +96,7 @@ exam-anticheat:
 
 exams: exam-sandbox exam-mbpp exam-anticheat
 
-.PHONY: install run debug clean fclean lint lint-strict
+.PHONY: install run debug clean fclean clean-evals clean-images lint lint-strict
 .PHONY: launch-sandbox sandbox-config sandbox-mbpp-stdio sandbox-mbpp-server
 .PHONY: sandbox-swe-bench dump-mbpp
 .PHONY: exam-sandbox exam-mbpp exam-swebench exam-anticheat exams

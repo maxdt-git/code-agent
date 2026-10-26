@@ -14,6 +14,10 @@ CONTAINER = os.environ.get("SWEBENCH_CONTAINER")
 # path of eval script
 EVAL_SCRIPT = os.environ.get("EVAL_SCRIPT")
 DOCKER = os.environ.get("DOCKER_CMD", "docker")
+CONTAINER_SETUP = os.environ.get(
+    "CONTAINER_SETUP",
+    "source /opt/miniconda3/bin/activate testbed 2>/dev/null; "
+)
 
 mcp = FastMCP("swebench-tool")
 
@@ -65,7 +69,7 @@ def shell(
         # -w choose start folder -> workdir
         # -i keep open when need to write
         argv = (DOCKER, "exec", "-i", "-w", workdir, CONTAINER,
-                "bash", "-c", command)
+                "bash", "-c", CONTAINER_SETUP + command)
         cwd = None
     else:
         argv = ["bash", "-c", command]

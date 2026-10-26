@@ -18,8 +18,9 @@ from agent_smith.swebench.docker_env import Container
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MODEL = "qwen/qwen3.8-27b"
-DEFAULT_PROVIDER_URL = "https://api.groq.com/openai/v1"
+DEFAULT_MODEL = "gemini-3.6-flash"
+DEFAULT_PROVIDER_URL = "https://generativelanguage.googleapis.com/v1beta/" \
+                       "openai/"
 DEADLINE_SECONDS = 840      # limit 900 s
 MAX_ITERATIONS = 25         # limit 30
 MAX_INPUT_TOKENS = 300_000
@@ -50,6 +51,14 @@ Rules:
 - Exactly one ```python block per answer, then stop.
 - Use print() to see results; keep outputs short (slice long strings).
 - Do not look for the solution online or in the git history.
+- Your code block runs in a restricted sandbox: it can only call the
+  functions below, not import the project. To run the project's code, use
+  run_command, e.g. run_command("python -c 'from sympy import S; print(S(1)
+  + 1)'")
+  The `python` there is already the project's environment.
+- Never write the result of your code yourself: it is given back to you
+  as the Observation.
+
 """
 
 

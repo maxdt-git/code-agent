@@ -24,6 +24,15 @@ class Completion:
     model: str
 
 
+def is_daily_quota(error: RateLimitedError, max_wait: float) -> bool:
+    """
+    True when a quota for the day, or a long retry_after
+    """
+    text = str(error).lower().replace(" ", "")
+    long_wait = error.retry_after is not None and error.retry_after > max_wait
+    return "perday" in text or long_wait
+
+
 class LLMClient:
     """
     Send chat requests through a ChatBackend, retrying on failure
@@ -169,6 +178,12 @@ class LLMClient:
                 limited_in_row += 1
                 if limited_in_row >= pool.live_count:
                     limited_in_row = 0
+                    has_fallback = self._target_index + 1 < len(self._targets)
+                    if has_fallback and is_daily_quota(
+                            e, self._config.backoff_max_seconds):
+                        self._target_index += 1
+                        continue
+
                     if requests < self._config.max_attempts:
                         wait_sec = e.retry_after if e.retry_after is not None \
                             else self._backoff(waits)
