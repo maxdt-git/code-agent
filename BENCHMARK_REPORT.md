@@ -27,9 +27,9 @@ All on free tiers, keys loaded from `.env`.
 
 | Model | Provider | Why it was selected |
 |---|---|---|
-| `gemini-3.5-flash-lite` | Google AI Studio | accepts long requests, default model of the agent |
+| `gemini-3.5-flash-lite` | Google AI Studio | accepts long requests |
 | `gemini-3.6-flash` | Google AI Studio | fastest Gemini model on a 10,000-token request (5.3 s) |
-| `qwen/qwen3.8-27b` | Groq | fastest provider (about 0.5 s per request), best MBPP model |
+| `qwen/qwen3.8-27b` | Groq | fastest provider (about 0.5 s per request), best MBPP model, default model of the agent |
 | `openai/gpt-oss-120b` | Groq | largest model available on Groq |
 | `cohere/north-mini-code:free` | OpenRouter | fastest OpenRouter free model on a 10,000-token request (1.9 s), code model |
 
@@ -235,16 +235,25 @@ dataset (it returns inside its loop), so a correct solution cannot pass it.
 
 **Selected models**
 
-- **SWE-bench: `gemini-3.5-flash-lite`** (Gemini) as the default model: 3/3
-  on the common tasks in both agent versions, no retry, no provider error,
-  and a daily quota large enough for several tasks. Its weak point is
-  latency (8 to 20 s per request), which is safe within the 900 s limit.
-- **`qwen/qwen3.8-27b`** (Groq) as the second choice: the best pass rate,
-  **6/6 on the whole exam pool**, about 40 times faster per request. But
-  two of its runs were cut by the 8,000-token request size limit (they
-  passed only because the agent keeps the patch made so far), and its
-  200,000-token daily quota covers about five tasks: on a harder task, it
-  is the provider, not the model, that would fail.
+- **SWE-bench: `qwen/qwen3.8-27b`** (Groq) as the default model: the best
+  pass rate, **6/6 on the whole exam pool**, and the lowest input token
+  use of the models that pass. On the three common tasks it uses 99,846
+  input tokens, against 219,202 for `gemini-3.5-flash-lite` in v1 and
+  146,111 in v2. Its most expensive task stays at 37,341 tokens (12 % of
+  the 300,000 limit), while `gemini-3.5-flash-lite` reached 155,923 on
+  `sympy-14711` in v1 (52 %), over the 50 % that the exam rewards. It also
+  needs fewer iterations on the hardest task (16 against 25) and is about
+  40 times faster per request. Its weak point is the provider: two runs
+  were cut by Groq's 8,000-token request size limit (they passed only
+  because the agent keeps the patch made so far), and the 200,000-token
+  daily quota covers about five tasks, so the exam must not be run on a
+  day the quota is already used.
+- **`gemini-3.5-flash-lite`** (Gemini) as the second choice, for days when
+  the Groq quota is used up: 3/3 on the common tasks in both agent
+  versions, no retry, no provider error. It costs more input tokens and is
+  slow (8 to 20 s per request), which is still safe within the 900 s
+  limit. Select it with `--model-name gemini-3.5-flash-lite
+  --provider-url https://generativelanguage.googleapis.com/v1beta/openai/`.
 - **MBPP: `qwen/qwen3.8-27b`** on Groq: 19/20, 1.95 iterations and about
   1,400 input tokens per task (23 % of the limit), 0.5 s per request.
 

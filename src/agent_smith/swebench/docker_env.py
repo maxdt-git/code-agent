@@ -12,6 +12,12 @@ class Container:
     One SWE-bench container, tied to this process: it dies with it
     """
     def __init__(self, image: str, docker: str = "docker") -> None:
+        # Podman refuses short names like swebench/x without a TTY:
+        # give the registry explicitly (Docker accepts it too)
+        first = image.split("/")[0]
+        if "/" not in image or not ("." in first or ":" in first
+                                    or first == "localhost"):
+            image = f"docker.io/{image}"
         self.image = image
         self.docker = docker
         self.name = f"agent_smith_{os.getpid()}"

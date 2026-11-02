@@ -1,16 +1,19 @@
-# GOINFRE  := /goinfre/$(USER)/agent_smith
-# UV_BASE  := UV_PYTHON_INSTALL_DIR=$(GOINFRE)/uv/python
-# UV_ENV   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv
-# UV_MOU   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv-moulinette UV_PYTHON=3.12
-GOINFRE  := .venv moulinette/.venv
-UV_BASE  :=
-UV_ENV   :=
-UV_MOU   := UV_PYTHON=3.12
+GOINFRE  := /goinfre/$(USER)/agent_smith
+UV_BASE  := UV_PYTHON_INSTALL_DIR=$(GOINFRE)/uv/python
+UV_ENV   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv
+UV_MOU   := $(UV_BASE) UV_PROJECT_ENVIRONMENT=$(GOINFRE)/.venv-moulinette UV_PYTHON=3.12
+# GOINFRE  := .venv moulinette/.venv
+# UV_BASE  :=
+# UV_ENV   :=
+# UV_MOU   := UV_PYTHON=3.12
 
 install:
 	$(UV_BASE) uv python install 3.10 3.12
 	$(UV_ENV) uv sync
 	cd moulinette && $(UV_MOU) uv sync --reinstall-package moulinette
+
+docker-up:
+	-systemctl --user start podman.socket
 
 run:
 	$(UV_ENV) uv run python -m agent_smith
@@ -85,11 +88,15 @@ MODEL_ARGS := $(if $(MODEL),--model-name $(MODEL)) \
 exam-sandbox:
 	./exams/exam_sandbox.sh $(EXAM_ARGS)
 
-exam-mbpp:
+exam-mbpp: docker-up
 	./exams/exam_mbpp.sh $(EXAM_ARGS) $(MODEL_ARGS)
 
-exam-swebench:
-	./exams/exam_swebench.sh $(EXAM_ARGS) $(MODEL_ARGS)
+# Rootless Podman (school PCs) cannot copy files owned by our uid into a
+# container: run as the namespace root, empty with a real Docker
+UNSHARE := $(if $(findstring podman,$(shell docker --version 2>/dev/null)),podman unshare)
+
+exam-swebench: docker-up
+	$(UNSHARE) ./exams/exam_swebench.sh $(EXAM_ARGS) $(MODEL_ARGS)
 
 exam-anticheat:
 	./exams/exam_anticheat.sh --student-path .
@@ -98,5 +105,5 @@ exams: exam-sandbox exam-mbpp exam-anticheat
 
 .PHONY: install run debug clean fclean clean-evals clean-images lint lint-strict
 .PHONY: launch-sandbox sandbox-config sandbox-mbpp-stdio sandbox-mbpp-server
-.PHONY: sandbox-swe-bench dump-mbpp
+.PHONY: sandbox-swe-bench dump-mbpp docker-up
 .PHONY: exam-sandbox exam-mbpp exam-swebench exam-anticheat exams

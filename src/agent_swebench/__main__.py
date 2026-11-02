@@ -27,8 +27,11 @@ MAX_INPUT_TOKENS = 300_000
 MAX_OUTPUT_TOKENS = 10_000
 EVAL_PATH = "/tmp/agent/eval.sh"
 # variables the tool server needs to reach Docker (see TOOL_ENV_VARS)
-DOCKER_ENV_VARS = ("DOCKER_CMD", "DOCKER_HOST", "CONTAINER_SETUP",
-                   "TEST_OUTPUT")
+DOCKER_ENV_VARS = ("DOCKER_CMD", "DOCKER_HOST", "TEST_OUTPUT",
+                   "XDG_RUNTIME_DIR")
+# CONTAINER_SETUP, plus Podman's own settings: without _CONTAINERS_*,
+# rootless Podman run under `podman unshare` thinks it is root
+DOCKER_ENV_PREFIXES = ("CONTAINER", "_CONTAINERS")
 
 SYSTEM_RULES = """You are an expert software engineer fixing a real bug in \
 the repository at /testbed. Your Python code runs in a sandbox: use the \
@@ -160,8 +163,9 @@ def main() -> None:
 
         # 2. the tool server, pointed at this container
         env = {"SWEBENCH_CONTAINER": container.name, "EVAL_SCRIPT": EVAL_PATH}
-        env.update(
-            {k: os.environ[k] for k in DOCKER_ENV_VARS if k in os.environ})
+        env.update({k: v for k, v in os.environ.items()
+                    if k in DOCKER_ENV_VARS
+                    or k.startswith(DOCKER_ENV_PREFIXES)})
         bridge = McpBridge(StdioServerParameters(
             command=sys.executable,
             args=[str(ROOT / "mcp_tools_swebench.py")], env=env))
