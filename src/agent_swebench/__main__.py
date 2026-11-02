@@ -18,16 +18,17 @@ from agent_smith.swebench.docker_env import Container
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MODEL = "gemini-3.6-flash"
-DEFAULT_PROVIDER_URL = "https://generativelanguage.googleapis.com/v1beta/" \
-                       "openai/"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
+DEFAULT_PROVIDER_URL = "https://api.groq.com/openai/v1"
+
 DEADLINE_SECONDS = 840      # limit 900 s
 MAX_ITERATIONS = 25         # limit 30
 MAX_INPUT_TOKENS = 300_000
 MAX_OUTPUT_TOKENS = 10_000
 EVAL_PATH = "/tmp/agent/eval.sh"
 # variables the tool server needs to reach Docker (see TOOL_ENV_VARS)
-DOCKER_ENV_VARS = ("DOCKER_CMD", "DOCKER_HOST", "CONTAINER_SETUP")
+DOCKER_ENV_VARS = ("DOCKER_CMD", "DOCKER_HOST", "CONTAINER_SETUP",
+                   "TEST_OUTPUT")
 
 SYSTEM_RULES = """You are an expert software engineer fixing a real bug in \
 the repository at /testbed. Your Python code runs in a sandbox: use the \
@@ -92,6 +93,10 @@ def parse_args() -> argparse.Namespace:
         "--max-iterations", default=MAX_ITERATIONS, type=int,
         help="max_iterations for the llm"
     )
+    parser.add_argument(
+        "--no-fallback", action="store_true",
+        help="benchmark mode: measure only the given model, no fallback"
+    )
 
     return parser.parse_args()
 
@@ -129,6 +134,7 @@ def write_solution(path: str, task: SWEBenchTaskInput, run: AgentRun,
         system_prompt=system_prompt,
         error=run.error
     )
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(solution.model_dump_json(indent=2))
 
 
@@ -165,8 +171,10 @@ def main() -> None:
         sandbox = Sandbox(config_sandbox, bridge)
         manual = build_manual(bridge.list_tools(), config_sandbox)
         system_prompt = SYSTEM_RULES + "\n" + manual
-        client = LLMClient(LLMConfig.from_file(ROOT / "config/llm.json"),
-                           args.provider_url, args.model_name)
+        llm_config = LLMConfig.from_file(ROOT / "config/llm.json")
+        if args.no_fallback:
+            llm_config.fallbacks = []
+        client = LLMClient(llm_config, args.provider_url, args.model_name)
         run = run_agent(
             client, sandbox, system_prompt, build_task_prompt(task),
             args.max_iterations, deadline,

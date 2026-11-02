@@ -14,6 +14,11 @@ CONTAINER = os.environ.get("SWEBENCH_CONTAINER")
 # path of eval script
 EVAL_SCRIPT = os.environ.get("EVAL_SCRIPT")
 DOCKER = os.environ.get("DOCKER_CMD", "docker")
+# run_tests output: "section" = only the test results between the eval
+# script markers (default), "raw" = tail of stdout + stderr (benchmark v1)
+TEST_OUTPUT = os.environ.get("TEST_OUTPUT", "section")
+TEST_START = ">>>>> Start Test Output"
+TEST_END = ">>>>> End Test Output"
 CONTAINER_SETUP = os.environ.get(
     "CONTAINER_SETUP",
     "source /opt/miniconda3/bin/activate testbed 2>/dev/null; "
@@ -289,6 +294,23 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
     return f"Edited {filepath}: 1 occurence replaced"
 
 
+def test_section(text: str) -> str | None:
+    """
+    Part of the eval script output between the Start/End Test Output
+    markers, without the bash trace lines; None if there is no marker
+    """
+    start = text.rfind(TEST_START)
+    if start == -1:
+        return None
+    # skip the rest of the marker line itself
+    start = text.find("\n", start) + 1
+    end = text.find(TEST_END, start)
+    body = text[start:] if end == -1 else text[start:end]
+    # "+ ..." lines are the `set -x` trace of the script, not test output
+    lines = [line for line in body.splitlines() if not line.startswith("+ ")]
+    return "\n".join(lines).strip()
+
+
 @mcp.tool()
 def run_tests() -> str:
     """
@@ -296,7 +318,18 @@ def run_tests() -> str:
     """
     if EVAL_SCRIPT is None:
         return "Noe evaluation script provided"
-    code, out, err = shell(f"bash {shlex.quote(EVAL_SCRIPT)}", timeout=TESTS_TIMEOUT)
+    if TEST_OUTPUT == "section":
+        # 2>&1: one stream in time order, so the markers stay around
+        # the test results instead of being split from them
+        code, out, _ = shell(f"bash {shlex.quote(EVAL_SCRIPT)} 2>&1",
+                             timeout=TESTS_TIMEOUT)
+        section = test_section(out)
+        if section is not None:
+            return (f"exit code: {code}\n--- test output ---\n"
+                    f"{truncate(section)}")
+        return f"exit code: {code}\n{truncate(out)}"
+    code, out, err = shell(f"bash {shlex.quote(EVAL_SCRIPT)}",
+                           timeout=TESTS_TIMEOUT)
     return f"exit code: {code}\n{truncate(out + err)}"
 
 

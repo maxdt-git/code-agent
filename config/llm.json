@@ -13,9 +13,10 @@
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "key_env": "GEMINI_API_KEY"}
   ],
-  "fallbacks": [{"provider": "openrouter", "model": "cohere/north-mini-code:free"}],
+  "fallbacks": [],
   "request_timeout_seconds": 60,
   "max_attempts": 8,
   "backoff_base_seconds": 1.0,
   "backoff_max_seconds": 20.0
 }
+

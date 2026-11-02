@@ -146,7 +146,7 @@ def main() -> None:
         system_prompt=system_prompt,
         error=run.error
     )
-
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(solution.model_dump_json(indent=2))
 
 

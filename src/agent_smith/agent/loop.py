@@ -79,6 +79,7 @@ def run_agent(
                 messages, STOP, max_tokens=max_tokens, deadline=deadline)
             text = completion.result.text
             extraction = extract_code(text)
+
             result = sandbox.execute(extraction.code) \
                 if extraction.code else None
             observation = format_observation(extraction, result)
