@@ -5,6 +5,7 @@ from pathlib import Path
 from agent_smith.llm.client import LLMClient
 from agent_smith.llm.config import LLMConfig
 import sys
+import threading
 import time
 from dotenv import load_dotenv
 from mcp import StdioServerParameters
@@ -71,6 +72,31 @@ def on_sigterm(signum: int, frame: object) -> None:
     Turn SIGTERM into SystemExit so that every finally block runs
     """
     raise SystemExit(143)
+
+
+def parent_of(pid: int) -> int:
+    """
+    Parent pid of pid, read in /proc (0 if pid is gone)
+    """
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return 0
+    # the name is between parentheses and may contain spaces
+    return int(stat.rsplit(")", 1)[1].split()[1])
+
+
+def watch_parents() -> None:
+    """
+    SIGTERM the agent when its launcher dies (kill -9 of uv, Ctrl+C on
+    the exam: the moulinette runs us in our own session, we get nothing)
+    """
+    parent = os.getppid()
+    grandparent = parent_of(parent)
+    while os.getppid() == parent and parent_of(parent) == grandparent:
+        time.sleep(1)
+    # to the main thread: it interrupts its blocking call at once
+    signal.pthread_kill(threading.main_thread().ident or 0, signal.SIGTERM)
 
 
 def parse_args() -> argparse.Namespace:
@@ -145,6 +171,7 @@ def main() -> None:
     start = time.monotonic()
     deadline = start + DEADLINE_SECONDS
     signal.signal(signal.SIGTERM, on_sigterm)
+    threading.Thread(target=watch_parents, daemon=True).start()
     load_dotenv()
     args = parse_args()
     task = SWEBenchTaskInput.model_validate_json(Path(
@@ -189,6 +216,9 @@ def main() -> None:
     except Exception as e:
         run.error = f"{type(e).__name__}: {e}"
     finally:
+        # a 2nd Ctrl+C (uv forwards it too) or SIGTERM must not stop cleanup
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         # close in reverse order of creation, then ALWAYS write the output
         if sandbox:
             sandbox.close()
