@@ -68,7 +68,7 @@ sandbox-mbpp-stdio:
 
 # With MBPP tools (HTTP)
 sandbox-mbpp-server:
-	uv run sandbox --mcp-server <URL>
+	uv run sandbox --mcp-server http://127.0.0.1:8000/mcp
 
 # With SWE-bench tools
 sandbox-swe-bench:
