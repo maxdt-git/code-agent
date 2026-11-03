@@ -221,5 +221,5 @@ AI assistants (Claude) were used for:
 - **Writing:** help with wording the documentation.
 
 The architecture, the agent loop, the sandbox and the tools were designed
-and written by us. Every AI suggestion was read, tested and understood
+and written by me. Every AI suggestion was read, tested and understood
 before being kept.
