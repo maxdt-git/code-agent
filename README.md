@@ -2,6 +2,13 @@
 
 # Agent Smith
 
+**Stack:** Python · Docker/Podman sandbox · MCP · LLM APIs (Groq, Gemini, OpenRouter) · uv
+
+**Highlights**
+- Agent loop, sandbox, MCP client and LLM client written from scratch — no agent framework
+- **SWE-bench Verified: 3/3** on the evaluated tasks (6/6 on the full exam pool) · **MBPP: 19/20**
+- Benchmarked 5 models across 3 providers; an output-trimming fix cut input tokens by 33 % at equal score
+
 ## Description
 
 Agent Smith is a code agent built from scratch: an LLM solves coding tasks
