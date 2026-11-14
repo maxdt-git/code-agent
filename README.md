@@ -202,13 +202,7 @@ tasks (sympy-13480, xarray-4629, sympy-14711):
 
 - [Model Context Protocol](https://modelcontextprotocol.io/) and its
   [Python SDK](https://github.com/modelcontextprotocol/python-sdk)
-- Wang et al., *Executable Code Actions Elicit Better LLM Agents*
-  (CodeAct), 2024
-- Yao et al., *ReAct: Synergizing Reasoning and Acting in Language Models*,
-  2022
-- Jimenez et al., *SWE-bench: Can Language Models Resolve Real-World
-  GitHub Issues?*, 2023, and [SWE-bench Verified](https://www.swebench.com/)
-- Austin et al., *Program Synthesis with Large Language Models* (MBPP), 2021
+- [SWE-bench Verified](https://www.swebench.com/)
 - Python documentation: `ast`, `multiprocessing`, `resource`, `builtins`
 - [OpenAI Python SDK](https://github.com/openai/openai-python) (used with
   OpenAI-compatible endpoints), Groq, Gemini and OpenRouter API docs
