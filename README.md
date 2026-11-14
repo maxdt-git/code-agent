@@ -1,6 +1,4 @@
-*This activity has been created as part of the 42 curriculum by mde-nas.*
-
-# Agent Smith
+# Code Agent
 
 **Stack:** Python · Docker/Podman sandbox · MCP · LLM APIs (Groq, Gemini, OpenRouter) · uv
 
@@ -11,7 +9,7 @@
 
 ## Description
 
-Agent Smith is a code agent built from scratch: an LLM solves coding tasks
+This is a code agent built from scratch: an LLM solves coding tasks
 by writing Python code that runs in a sandbox, reading the result, and
 trying again until it submits an answer (Thought → Code → Observation).
 
