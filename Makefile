@@ -91,19 +91,10 @@ exam-sandbox:
 exam-mbpp: docker-up
 	./exams/exam_mbpp.sh $(EXAM_ARGS) $(MODEL_ARGS)
 
-# Rootless Podman (school PCs) cannot copy files owned by our uid into a
-# container: run as the namespace root, empty with a real Docker
-UNSHARE := $(if $(findstring podman,$(shell docker --version 2>/dev/null)),podman unshare)
-
-exam-swebench: docker-up
-	$(UNSHARE) ./exams/exam_swebench.sh $(EXAM_ARGS) $(MODEL_ARGS)
-
 exam-anticheat:
 	./exams/exam_anticheat.sh --student-path .
-
-exams: exam-sandbox exam-mbpp exam-anticheat
 
 .PHONY: install run debug clean fclean clean-evals clean-images lint lint-strict
 .PHONY: launch-sandbox sandbox-config sandbox-mbpp-stdio sandbox-mbpp-server
 .PHONY: sandbox-swe-bench dump-mbpp docker-up
-.PHONY: exam-sandbox exam-mbpp exam-swebench exam-anticheat exams
+.PHONY: exam-sandbox exam-mbpp exam-anticheat 
